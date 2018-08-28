@@ -180,7 +180,7 @@ public class DataManager {
             //ChartFrame frame2 = new ChartFrame("Results", chart2);
             //frame2.pack();
             //frame2.setVisible(true);
-            //final XYDataset airSet = new TimeSeriesCollection(airTemps);
+            //final XYDataset airSet = new TimeSeriesCollection(airTemps);  
             //final XYDataset accidentSet = new TimeSeriesCollection(incidents);
 
 
