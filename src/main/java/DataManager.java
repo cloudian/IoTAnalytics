@@ -5,6 +5,7 @@ import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.*;
 import org.apache.spark.sql.types.*;
+import org.jfree.data.ComparableObjectSeries;
 import org.jfree.data.time.TimeSeriesCollection;
 import org.jfree.data.xy.DefaultXYDataset;
 import org.jfree.data.xy.XYDataset;
@@ -34,6 +35,7 @@ import org.jfree.chart.ChartFrame;
 import org.jfree.data.statistics.Regression;
 import org.jfree.chart.ChartPanel;
 import javax.swing.JPanel;
+import java.text.ParseException;
 
 public class DataManager {
 
@@ -111,83 +113,7 @@ public class DataManager {
         System.out.println(clusters.size() + " cluster size");
         separateAccidents(accidents, clusters);
         List<GraphableCluster> graphData = aggregateData(spark, clusters);
-
-
-        for (GraphableCluster cluster : graphData) {
-            //TimeSeries roadTemps = new TimeSeries("Road Temperature");
-            //TimeSeries airTemps = new TimeSeries("Air Temperature");
-            //TimeSeries incidents = new TimeSeries("Accidents");
-            //SimpleDateFormat roadFormat = new SimpleDateFormat("yyyy-MM-dd");
-            //SimpleDateFormat accidentFormat = new SimpleDateFormat("MM/dd/yy");
-            XYSeries incidents = new XYSeries("Time of Day");
-            XYSeries roadTemps = new XYSeries("Road Temperature");
-            XYSeries airTemps = new XYSeries("Air Temperature");
-
-
-            //Create subplot for weather data;
-            final XYSeriesCollection weather = new XYSeriesCollection();
-            for (Tuple2<String, Tuple2<Double, Double>> roadDataPoint : cluster.getRoadData()) {
-                //Date date = roadFormat.parse(roadDataPoint._1);
-                //Day day = new Day(date);
-                int hour = Integer.parseInt(roadDataPoint._1);
-                double roadSurfaceTemp = roadDataPoint._2._1;
-                double airTemp = roadDataPoint._2._2;
-                roadTemps.add(hour, roadSurfaceTemp);
-                airTemps.add(hour, airTemp);
-
-            }
-            weather.addSeries(roadTemps);
-            weather.addSeries(airTemps);
-
-            final XYItemRenderer renderer1 = new StandardXYItemRenderer();
-            final NumberAxis rangeAxis1 = new NumberAxis("Temperature (Fahrenheit)");
-            final XYPlot subplot1 = new XYPlot(weather, null, rangeAxis1, renderer1);
-            subplot1.setRangeAxisLocation(AxisLocation.BOTTOM_OR_LEFT);
-
-            //Create subplot for accident data
-            for (Tuple2<String, Integer> accidentDataPoint : cluster.getAccidentData()) {
-                //Date date = accidentFormat.parse(accidentDataPoint._1);
-                int hour = Integer.parseInt(accidentDataPoint._1);
-                //date.setYear(117);
-                //System.out.println(date);
-                int numAccidents = accidentDataPoint._2;
-                //incidents.add(new Day(date), numAccidents);
-                incidents.add(hour, numAccidents);
-            }
-
-            final XYItemRenderer renderer2 = new StandardXYItemRenderer();
-            final NumberAxis rangeAxis2 = new NumberAxis("Number of Accidents");
-            final XYPlot subplot2 = new XYPlot(new XYSeriesCollection(incidents), null, rangeAxis2, renderer2);
-            subplot2.setRangeAxisLocation(AxisLocation.BOTTOM_OR_LEFT);
-
-            final NumberAxis domainAxis = new NumberAxis("Hour of Day");
-            final CombinedDomainXYPlot plot = new CombinedDomainXYPlot(domainAxis);
-            plot.setGap(10.0);
-
-            // add the subplots...
-            plot.add(subplot1, 1);
-            plot.add(subplot2, 1);
-            plot.setOrientation(PlotOrientation.VERTICAL);
-
-            JFreeChart chart = new JFreeChart("Conditions at "+cluster.stationName,
-                    JFreeChart.DEFAULT_TITLE_FONT, plot, true);
-            ChartFrame frame = new ChartFrame("Results", chart);
-            frame.pack();
-            frame.setVisible(true);
-
-            //JFreeChart chart2 = new JFreeChart("Accidents at "+cluster.stationName,
-              //      JFreeChart.DEFAULT_TITLE_FONT, subplot2, true);
-            //ChartFrame frame2 = new ChartFrame("Results", chart2);
-            //frame2.pack();
-            //frame2.setVisible(true);
-            //final XYDataset airSet = new TimeSeriesCollection(airTemps);  
-            //final XYDataset accidentSet = new TimeSeriesCollection(incidents);
-
-
-            //System.out.println(cluster.getAccidentData().toString());
-            //System.out.println(cluster.getRoadData().toString());
-
-        }
+        showGraph(graphData);
 
         // shut down
         spark.stop();
@@ -271,7 +197,9 @@ public class DataManager {
 
     private static List<GraphableCluster> aggregateData (SparkSession spark, HashMap<String, Cluster> clusters) {
         List<GraphableCluster> graphData = new ArrayList<>();
-        List<String > times = Arrays.asList("06", "07", "08", "09", "10", "16", "17", "18", "19", "20");
+        //List<String > times = Arrays.asList("06", "07", "08", "09", "10", "16", "17", "18", "19", "20");
+        SimpleDateFormat accidentFormat = new SimpleDateFormat("MM/dd/yy");
+        SimpleDateFormat weekdayFormat =new SimpleDateFormat("EEEE");
         for (String clusterName : clusters.keySet()) {
             GraphableCluster gCluster = new GraphableCluster(clusterName);
             Cluster cluster = clusters.get(clusterName);
@@ -283,19 +211,125 @@ public class DataManager {
                     new Tuple2<>(new Tuple2<>((Double) r.get(RoadSurfaceTemperature), 1), new Tuple2<>((Double) r.get(AirTemperature), 1))))
                     .reduceByKey((r,s) -> new Tuple2<>(new Tuple2<>(r._1._1 + s._1._1, r._1._2 + s._1._2), new Tuple2<>(r._2._1 + s._2._1, r._2._2 + s._2._2)))
                     .mapToPair(r -> new Tuple2<>(r._1, new Tuple2<>((1.0 * r._2._1._1 / r._2._1._2), (1.0 * r._2._2._1 / r._2._2._2))));
-            //rdd2.repartition(1).saveAsTextFile("tempfile " + clusterName);
             List<Tuple2<String, Tuple2<Double, Double>>> conditionData = rddC2.collect();
             gCluster.setRoadData(conditionData);
 
             JavaRDD<Row> rddA = jsc.parallelize(cluster.getAccidents());
-            JavaPairRDD<String, Integer> rddA2 = rddA.mapToPair(r -> new Tuple2<>(r.get(EventDate).toString()
-                    .substring(r.get(EventDate).toString().indexOf(" ")+1, r.get(EventDate).toString().indexOf(":")), 1)).reduceByKey((r,s) -> r + s);
+            JavaPairRDD<String, Integer> rddA2 = rddA
+                    .mapToPair(r -> new Tuple2<>(r.get(EventDate).toString().substring(r.get(EventDate).toString().indexOf(" ")+1, r.get(EventDate).toString().indexOf(":")), 1))
+                    //.mapToPair(r -> new Tuple2<>(weekdayFormat.format(
+                            //accidentFormat.parse(r.get(EventDate).toString().substring(0, r.get(EventDate).toString().indexOf(" ")))), 1))
+                    .reduceByKey((r,s) -> r + s);
             List<Tuple2<String, Integer>> accidentData = rddA2.collect();
             gCluster.setAccidentData(accidentData);
             graphData.add(gCluster);
         }
         return graphData;
     }
+
+    private static void showGraph(List<GraphableCluster> graphData) {
+        for (GraphableCluster cluster : graphData) {
+            //TimeSeries roadTemps = new TimeSeries("Road Temperature");
+            //TimeSeries airTemps = new TimeSeries("Air Temperature");
+            //TimeSeries incidents = new TimeSeries("Accidents");
+            //SimpleDateFormat roadFormat = new SimpleDateFormat("yyyy-MM-dd");
+            //SimpleDateFormat accidentFormat = new SimpleDateFormat("MM/dd/yy");
+            XYSeries incidents = new XYSeries("Time of Day");
+            XYSeries roadTemps = new XYSeries("Road Temperature");
+            XYSeries airTemps = new XYSeries("Air Temperature");
+            //ComparableObjectSeries incidents = new ComparableObjectSeries("Day of Week");
+            //ComparableObjectSeries roadTemps = new ComparableObjectSeries("Road Temperature");
+            //ComparableObjectSeries airTemps = new ComparableObjectSeries("Air Temperature");
+
+
+
+            //Create subplot for weather data;
+            final XYSeriesCollection weather = new XYSeriesCollection();
+            for (Tuple2<String, Tuple2<Double, Double>> roadDataPoint : cluster.getRoadData()) {
+                //Date date = roadFormat.parse(roadDataPoint._1);
+                //Day day = new Day(date);
+                int hour = Integer.parseInt(roadDataPoint._1);
+                double roadSurfaceTemp = roadDataPoint._2._1;
+                double airTemp = roadDataPoint._2._2;
+                roadTemps.add(hour, roadSurfaceTemp);
+                airTemps.add(hour, airTemp);
+
+            }
+            weather.addSeries(roadTemps);
+            weather.addSeries(airTemps);
+
+            final XYItemRenderer renderer1 = new StandardXYItemRenderer();
+            final NumberAxis rangeAxis1 = new NumberAxis("Temperature (Fahrenheit)");
+            final XYPlot subplot1 = new XYPlot(weather, null, rangeAxis1, renderer1);
+            subplot1.setRangeAxisLocation(AxisLocation.BOTTOM_OR_LEFT);
+
+            //Create subplot for accident data
+            for (Tuple2<String, Integer> accidentDataPoint : cluster.getAccidentData()) {
+                //Date date = accidentFormat.parse(accidentDataPoint._1);
+                int hour = Integer.parseInt(accidentDataPoint._1);
+                //date.setYear(117);
+                //System.out.println(date);
+                int numAccidents = accidentDataPoint._2;
+                //incidents.add(new Day(date), numAccidents);
+                incidents.add(hour, numAccidents);
+            }
+
+            final XYItemRenderer renderer2 = new StandardXYItemRenderer();
+            final NumberAxis rangeAxis2 = new NumberAxis("Number of Accidents");
+            final XYPlot subplot2 = new XYPlot(new XYSeriesCollection(incidents), null, rangeAxis2, renderer2);
+            subplot2.setRangeAxisLocation(AxisLocation.BOTTOM_OR_LEFT);
+
+            final NumberAxis domainAxis = new NumberAxis("Hour of Day");
+            final CombinedDomainXYPlot plot = new CombinedDomainXYPlot(domainAxis);
+            plot.setGap(10.0);
+
+            // add the subplots...
+            plot.add(subplot1, 1);
+            plot.add(subplot2, 1);
+            plot.setOrientation(PlotOrientation.VERTICAL);
+
+            JFreeChart chart = new JFreeChart("Conditions at "+cluster.stationName,
+                    JFreeChart.DEFAULT_TITLE_FONT, plot, true);
+            ChartFrame frame = new ChartFrame("Results", chart);
+            frame.pack();
+            frame.setVisible(true);
+
+            //JFreeChart chart2 = new JFreeChart("Accidents at "+cluster.stationName,
+            //      JFreeChart.DEFAULT_TITLE_FONT, subplot2, true);
+            //ChartFrame frame2 = new ChartFrame("Results", chart2);
+            //frame2.pack();
+            //frame2.setVisible(true);
+            //final XYDataset airSet = new TimeSeriesCollection(airTemps);
+            //final XYDataset accidentSet = new TimeSeriesCollection(incidents);
+
+
+            //System.out.println(cluster.getAccidentData().toString());
+            //System.out.println(cluster.getRoadData().toString());
+
+        }
+    }
+
+    static Comparator<String> weekdayComparator = new Comparator<String>() {
+        @Override
+        public int compare(String s1, String s2) {
+            try{
+                SimpleDateFormat format = new SimpleDateFormat("EEEE");
+                Date d1 = format.parse(s1);
+                Date d2 = format.parse(s2);
+                if(d1.equals(d2)){
+                    return 0;
+                }else{
+                    Calendar c1 = Calendar.getInstance();
+                    Calendar c2 = Calendar.getInstance();
+                    c1.setTime(d1);
+                    c2.setTime(d2);
+                    return c1.get(Calendar.DAY_OF_WEEK) - c2.get(Calendar.DAY_OF_WEEK);
+                }
+            }catch(ParseException e){
+                throw new RuntimeException(e);
+            }
+        }
+    };
 
     private static class Cluster {
         private String stationName;
