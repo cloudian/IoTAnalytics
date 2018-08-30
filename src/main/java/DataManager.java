@@ -49,16 +49,13 @@ public class DataManager {
         Logger.getLogger("org.apache.spark").setLevel(Level.ERROR);
         Logger.getLogger("org.apache.spark.storage.BlockManager").setLevel(Level.ERROR);
 
-        String userAccessKey; // = "00c36f16c2600f70ae60";
-        String userSecretKey; // = "XsSbmCIfcYrX5NdCBj7n1QSaU2lhdgDJJBDlT7VE";
+        String userAccessKey;
+        String userSecretKey;
 
-        String endpoint; // = "tims4.mobi-cloud.com:80";
-        String bucketName; // = "analytics";
-        String conditionObjectName; // = "edited3.csv";
-        String accidentObjectName; // = "accident_data.csv";
-        //String conditionObjectName = "road-weather-information-stations.csv";
-
-        boolean csv = true;
+        String endpoint;
+        String bucketName;
+        String conditionObjectName;
+        String accidentObjectName;
 
         Properties props = new Properties();
         InputStream input = new FileInputStream("config.properties");
@@ -78,7 +75,6 @@ public class DataManager {
         String s3SparkConditionPath = "s3a://" + bucketName + "/" + conditionObjectName;
         String s3SparkAccidentPath = "s3a://" + bucketName + "/" + accidentObjectName;
 
-        //local spark
         SparkSession spark = SparkSession.builder().
                 appName("road_analytics").
                 config("spark.master", "local").
@@ -103,30 +99,26 @@ public class DataManager {
                 new StructField("Longitude", DataTypes.DoubleType, true, Metadata.empty()),
                 new StructField("Latitude", DataTypes.DoubleType, true, Metadata.empty())});
 
-        Dataset<Row> df = getDataFrame(spark, csv, s3SparkConditionPath, conditionSchema);
+        Dataset<Row> df = spark.read()
+                .format("csv")
+                .option("header", true)
+                .schema(conditionSchema)
+                .csv(s3SparkConditionPath);
         Dataset<Row> conditions = queryImportantData(spark, df);
-        Dataset<Row> accidents = getDataFrame(spark, csv, s3SparkAccidentPath, accidentSchema);
+
+        Dataset<Row> accidents = spark.read()
+                .format("csv")
+                .option("header", true)
+                //.option("inferSchema", true)
+                .schema(accidentSchema)
+                .csv(s3SparkAccidentPath);
+
         HashMap<DayOfWeek, Cluster> daysOfWeek = createClusters(spark, conditions);
         separateAccidents(accidents, daysOfWeek);
         List<GraphableCluster> graphData = aggregateData(spark, daysOfWeek);
         showGraph(graphData);
 
         spark.stop();
-    }
-
-    //Grabs data from Cloudian Hypserstore bucket specified in config
-    private static Dataset<Row> getDataFrame(SparkSession spark, boolean csv, String s3SparkPath, StructType customSchema) {
-        Dataset<Row> df;
-        if (csv) {
-            df = spark.read().
-                    format("csv").
-                    option("header", true).
-                    schema(customSchema).
-                    csv(s3SparkPath);
-        } else {
-            df = spark.read().json(s3SparkPath);
-        }
-        return df;
     }
 
     //Simplifies dataset to only include recirdings during timeframe for which we have accident data.
