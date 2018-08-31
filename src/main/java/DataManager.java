@@ -16,6 +16,7 @@ import org.apache.spark.sql.*;
 import org.apache.spark.sql.types.*;
 import scala.Tuple2;
 import java.sql.Timestamp;
+import java.text.ParseException;
 import java.time.DayOfWeek;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.SignStyle;
@@ -51,7 +52,6 @@ public class DataManager {
 
         String userAccessKey;
         String userSecretKey;
-
         String endpoint;
         String bucketName;
         String conditionObjectName;
@@ -76,7 +76,7 @@ public class DataManager {
         String s3SparkAccidentPath = "s3a://" + bucketName + "/" + accidentObjectName;
 
         SparkSession spark = SparkSession.builder().
-                appName("road_analytics").
+                appName("accident_analytics").
                 config("spark.master", "local").
                 getOrCreate();
 
@@ -109,7 +109,6 @@ public class DataManager {
         Dataset<Row> accidents = spark.read()
                 .format("csv")
                 .option("header", true)
-                //.option("inferSchema", true)
                 .schema(accidentSchema)
                 .csv(s3SparkAccidentPath);
 
@@ -121,7 +120,7 @@ public class DataManager {
         spark.stop();
     }
 
-    //Simplifies dataset to only include recirdings during timeframe for which we have accident data.
+    //Simplifies dataset to only include recordings during time frame for which we have accident data.
     private static Dataset<Row> queryImportantData(SparkSession spark, Dataset<Row> df) {
         df.createOrReplaceTempView("Roads");
         String query = "SELECT * " +
@@ -136,7 +135,6 @@ public class DataManager {
     private static HashMap<DayOfWeek, Cluster> createClusters(SparkSession spark, Dataset<Row> conditions) {
         Iterator<Row> iterator = conditions.toLocalIterator();
         HashMap<DayOfWeek, Cluster> clusters = new HashMap<>();
-        SimpleDateFormat weekdayFormat = new SimpleDateFormat("EEEE");
         while (iterator.hasNext()) {
             Row row = iterator.next();
             LocalDate date = ((Timestamp)row.get(DATA_TIME)).toLocalDateTime().toLocalDate();
